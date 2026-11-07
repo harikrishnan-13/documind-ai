@@ -1,5 +1,5 @@
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
 
 from config.views import health_check
 
@@ -40,4 +40,6 @@ urlpatterns = [
         SpectacularRedocView.as_view(url_name="schema"),
         name="redoc",
     ),
+    
+    path("api/v1/auth/", include("apps.accounts.urls")),
 ]

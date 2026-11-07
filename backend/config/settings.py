@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 import os
 from pathlib import Path
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -49,6 +50,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "drf_spectacular",
     "drf_spectacular_sidecar",
+    "rest_framework_simplejwt.token_blacklist",
 
     # Local applications
     "apps.accounts.apps.AccountsConfig",
@@ -152,8 +154,22 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
-
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "UPDATE_LAST_LOGIN": False,
 }
 
 #Configure API documentation metadata
