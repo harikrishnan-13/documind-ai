@@ -179,3 +179,6 @@ SPECTACULAR_SETTINGS = {
         "displayOperationId": True,
     },
 }
+
+#Tell Django to use our custom User model
+AUTH_USER_MODEL = "accounts.User"
