@@ -27,11 +27,7 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await api.get("/auth/profile/", {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        });
+        const response = await api.get("/auth/profile/");
 
         setProfile(response.data);
         setUser(response.data);
@@ -45,24 +41,14 @@ export default function Dashboard() {
 
   const handleLogout = async () => {
     try {
-      if (refreshToken) {
-        await api.post(
-          "/auth/logout/",
-          {
-            refresh: refreshToken,
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
-        );
-      }
-    } catch (err) {
-      console.error("Server logout failed:", err);
+      await api.post("/auth/logout/", {
+        refresh: refreshToken,
+      });
+    } catch (error) {
+      console.error("Logout API error:", error);
     } finally {
       logout();
-      navigate("/", { replace: true });
+      navigate("/");
     }
   };
 

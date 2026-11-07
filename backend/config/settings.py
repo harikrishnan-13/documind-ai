@@ -179,6 +179,7 @@ SIMPLE_JWT = {
     "UPDATE_LAST_LOGIN": False,
 }
 
+
 #Configure API documentation metadata
 SPECTACULAR_SETTINGS = {
     "TITLE": "DocuMind AI API",
