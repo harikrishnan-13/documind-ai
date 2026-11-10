@@ -4,6 +4,7 @@ from apps.conversations.views import (
     ConversationListCreateView,
     ConversationDetailView,
     ConversationMessageCreateView,
+    ConversationMessageRetryView,
 )
 
 from apps.conversations.management_views import (
@@ -14,43 +15,45 @@ from apps.conversations.management_views import (
 
 
 urlpatterns = [
-    # Active conversations
     path(
         "",
         ConversationListCreateView.as_view(),
-        name="conversation-list-create"
+        name="conversation-list-create",
     ),
 
-    # Archived conversations
     path(
         "archived/",
         ArchivedConversationListView.as_view(),
-        name="archived-conversation-list"
+        name="archived-conversation-list",
     ),
 
-    # Archive and restore
     path(
         "<uuid:id>/archive/",
         ConversationArchiveView.as_view(),
-        name="conversation-archive"
+        name="conversation-archive",
     ),
+
     path(
         "<uuid:id>/restore/",
         ConversationRestoreView.as_view(),
-        name="conversation-restore"
+        name="conversation-restore",
     ),
 
-    # Conversation details and deletion
     path(
         "<uuid:id>/",
         ConversationDetailView.as_view(),
-        name="conversation-detail"
+        name="conversation-detail",
     ),
 
-    # Send a message
     path(
         "<uuid:id>/messages/",
         ConversationMessageCreateView.as_view(),
-        name="conversation-message-create"
+        name="conversation-message-create",
+    ),
+
+    path(
+        "<uuid:id>/messages/<uuid:message_id>/retry/",
+        ConversationMessageRetryView.as_view(),
+        name="conversation-message-retry",
     ),
 ]

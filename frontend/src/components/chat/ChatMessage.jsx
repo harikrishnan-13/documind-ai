@@ -1,7 +1,15 @@
 import { Bot, User, AlertCircle, RefreshCw, LoaderCircle } from "lucide-react";
 
-export default function ChatMessage({ message, onRetry }) {
+export default function ChatMessage({
+  message,
+  onRetry,
+  retryDisabled = false,
+}) {
   const isUser = message.role === "user";
+
+  const isPending = message.status === "pending" || message.pending === true;
+
+  const isFailed = message.status === "failed" || message.failed === true;
 
   const time = message.created_at
     ? new Date(message.created_at).toLocaleTimeString(undefined, {
@@ -38,30 +46,49 @@ export default function ChatMessage({ message, onRetry }) {
             {message.content}
           </p>
 
-          {message.pending && (
+          {/* Pending state */}
+          {isPending && (
             <div
               className={`mt-2 flex items-center gap-1 text-xs ${
                 isUser ? "text-blue-100" : "text-slate-500"
               }`}
+              role="status"
             >
               <LoaderCircle size={13} className="animate-spin" />
-              Sending...
+              Processing...
             </div>
           )}
 
-          {message.failed && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-red-600">
-              <AlertCircle size={14} />
-              <span>Message failed to send.</span>
+          {/* Failed state */}
+          {isFailed && (
+            <div className="mt-3 rounded-lg border border-red-200/40 bg-red-50/10 p-2">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-red-200">
+                <AlertCircle size={14} className="shrink-0" />
 
-              <button
-                type="button"
-                onClick={onRetry}
-                className="inline-flex items-center gap-1 font-semibold underline"
-              >
-                <RefreshCw size={12} />
-                Retry
-              </button>
+                <span>Message failed to process.</span>
+              </div>
+
+              {message.error_message && (
+                <p className="mt-1 break-words text-xs text-red-100/90">
+                  {message.error_message}
+                </p>
+              )}
+
+              {isUser && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  disabled={retryDisabled || !onRetry}
+                  className="mt-2 inline-flex items-center gap-1 rounded-md bg-white/15 px-2.5 py-1.5 text-xs font-semibold text-white transition hover:bg-white/25 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {retryDisabled ? (
+                    <LoaderCircle size={12} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={12} />
+                  )}
+                  Retry
+                </button>
+              )}
             </div>
           )}
         </div>

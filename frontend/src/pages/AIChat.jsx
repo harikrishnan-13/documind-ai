@@ -63,6 +63,24 @@ function getErrorMessage(
   return error?.message || fallback;
 }
 
+function getUserMessageFromError(error) {
+  return (
+    error?.response?.data?.data?.user_message ||
+    error?.response?.data?.user_message ||
+    null
+  );
+}
+
+function isUnresolvedUserMessage(message) {
+  return (
+    message.role === "user" &&
+    (message.status === "pending" ||
+      message.status === "failed" ||
+      message.pending === true ||
+      message.failed === true)
+  );
+}
+
 export default function AIChat() {
   // --------------------------------------------------
   // Conversation states
@@ -154,6 +172,24 @@ export default function AIChat() {
     } finally {
       setIsLoadingArchived(false);
     }
+  }, []);
+
+  // --------------------------------------------------
+  // Reload messages from the database
+  // --------------------------------------------------
+
+  const refreshConversationMessages = useCallback(async (conversationId) => {
+    const response = await api.get(`/conversations/${conversationId}/`);
+
+    const conversationMessages = Array.isArray(response.data?.messages)
+      ? response.data.messages
+      : [];
+
+    setMessages(conversationMessages);
+
+    loadedConversationRef.current = conversationId;
+
+    return conversationMessages;
   }, []);
 
   // --------------------------------------------------
@@ -278,6 +314,10 @@ export default function AIChat() {
     archivedConversations.some(
       (conversation) => conversation.id === selectedConversationId,
     );
+
+  // Do not allow another message while a previous user message
+  // is pending or failed. The backend also enforces this rule.
+  const hasUnresolvedMessage = messages.some(isUnresolvedUserMessage);
 
   // --------------------------------------------------
   // Start a new conversation
@@ -497,7 +537,8 @@ export default function AIChat() {
       isSending ||
       isLoadingMessages ||
       isManagingConversationId ||
-      selectedConversationIsArchived
+      selectedConversationIsArchived ||
+      hasUnresolvedMessage
     ) {
       return;
     }
@@ -515,14 +556,17 @@ export default function AIChat() {
       role: "user",
       content: messageText,
       created_at: new Date().toISOString(),
+      status: "pending",
       pending: true,
     };
 
     setMessages((previous) => [...previous, temporaryMessage]);
 
-    try {
-      let conversationId = selectedConversationId;
+    // Keep this outside try so the catch block can recover
+    // the persisted message if the API request fails.
+    let conversationId = selectedConversationId;
 
+    try {
       // Create a conversation when the first message is submitted.
       if (!conversationId) {
         const title =
@@ -583,17 +627,85 @@ export default function AIChat() {
         // Keep the chat usable if the list refresh fails.
       }
     } catch (error) {
-      setMessages((previous) =>
-        previous.map((item) =>
-          item.id === temporaryMessageId
-            ? {
-                ...item,
+      let recoveredMessages = false;
+
+      // Some backend error responses may include the failed
+      // persisted user message directly.
+      const persistedUserMessage = getUserMessageFromError(error);
+
+      if (persistedUserMessage?.id) {
+        setMessages((previous) => [
+          ...previous.filter((item) => item.id !== temporaryMessageId),
+          persistedUserMessage,
+        ]);
+
+        recoveredMessages = true;
+      }
+
+      // If the error response did not include the database message,
+      // reload the conversation. This recovers its real UUID/status.
+      if (!recoveredMessages && conversationId) {
+        try {
+          const serverMessages =
+            await refreshConversationMessages(conversationId);
+
+          const matchingMessage = [...serverMessages]
+            .reverse()
+            .find(
+              (item) => item.role === "user" && item.content === messageText,
+            );
+
+          if (matchingMessage) {
+            recoveredMessages = true;
+          } else {
+            // The request may have failed before the backend saved it.
+            // Keep a local failed message so the user can submit it again.
+            setMessages((previous) => [
+              ...serverMessages,
+              {
+                ...temporaryMessage,
+                status: "failed",
                 pending: false,
                 failed: true,
-              }
-            : item,
-        ),
-      );
+                error_message: getErrorMessage(error),
+              },
+            ]);
+          }
+        } catch {
+          // The server could not be reached to recover the message.
+          // Keep the message locally and allow the user to submit it again.
+          setMessages((previous) =>
+            previous.map((item) =>
+              item.id === temporaryMessageId
+                ? {
+                    ...item,
+                    status: "failed",
+                    pending: false,
+                    failed: true,
+                    error_message:
+                      "Unable to confirm whether the message was saved. Please retry.",
+                  }
+                : item,
+            ),
+          );
+        }
+      }
+
+      if (!recoveredMessages && !conversationId) {
+        setMessages((previous) =>
+          previous.map((item) =>
+            item.id === temporaryMessageId
+              ? {
+                  ...item,
+                  status: "failed",
+                  pending: false,
+                  failed: true,
+                  error_message: getErrorMessage(error),
+                }
+              : item,
+          ),
+        );
+      }
 
       setPageError(getErrorMessage(error));
     } finally {
@@ -602,19 +714,115 @@ export default function AIChat() {
   }
 
   // --------------------------------------------------
-  // Retry a failed message
+  // Retry a failed message using its original database UUID
   // --------------------------------------------------
 
-  function handleRetryMessage(message) {
-    if (isSending || selectedConversationIsArchived) return;
+  async function handleRetryMessage(message) {
+    if (
+      isSending ||
+      isManagingConversationId ||
+      selectedConversationIsArchived
+    ) {
+      return;
+    }
 
-    setMessages((previous) =>
-      previous.filter((item) => item.id !== message.id),
-    );
+    // A temporary message means the backend did not return
+    // a persisted UUID. Let the user submit it as a new message.
+    if (typeof message.id !== "string" || message.id.startsWith("temporary-")) {
+      setMessages((previous) =>
+        previous.filter((item) => item.id !== message.id),
+      );
 
-    setInput(message.content);
+      setInput(message.content);
+
+      setPageError(
+        "This message was not saved on the server. Submit it again to retry.",
+      );
+
+      return;
+    }
+
+    if (!selectedConversationId) {
+      setPageError("Conversation not found. Please reload and try again.");
+      return;
+    }
+
+    if (message.status !== "failed" && message.failed !== true) {
+      return;
+    }
 
     setPageError("");
+
+    setIsSending(true);
+
+    // Immediately show the pending state while retrying.
+    setMessages((previous) =>
+      previous.map((item) =>
+        item.id === message.id
+          ? {
+              ...item,
+              status: "pending",
+              pending: true,
+              failed: false,
+              error_message: "",
+            }
+          : item,
+      ),
+    );
+
+    try {
+      const response = await api.post(
+        `/conversations/${selectedConversationId}/messages/${message.id}/retry/`,
+      );
+
+      const result = response.data?.data;
+
+      if (!result?.user_message || !result?.assistant_message) {
+        throw new Error("The server returned an unexpected retry response.");
+      }
+
+      // The backend retries the original database message.
+      // Do not create a duplicate user message in React.
+      setMessages((previous) => [
+        ...previous.filter(
+          (item) =>
+            item.id !== message.id && item.id !== result.assistant_message.id,
+        ),
+        result.user_message,
+        result.assistant_message,
+      ]);
+
+      try {
+        await loadConversations();
+      } catch {
+        // Retry succeeded; conversation list refresh is non-critical.
+      }
+    } catch (error) {
+      // Ask the backend for the latest persisted status.
+      // This is important if the retry failed after the DB was updated.
+      try {
+        await refreshConversationMessages(selectedConversationId);
+      } catch {
+        // Keep the local message available if the refresh also fails.
+        setMessages((previous) =>
+          previous.map((item) =>
+            item.id === message.id
+              ? {
+                  ...item,
+                  status: "failed",
+                  pending: false,
+                  failed: true,
+                  error_message: getErrorMessage(error),
+                }
+              : item,
+          ),
+        );
+      }
+
+      setPageError(getErrorMessage(error, "Unable to retry this message."));
+    } finally {
+      setIsSending(false);
+    }
   }
 
   // --------------------------------------------------
@@ -629,7 +837,17 @@ export default function AIChat() {
     isSending ||
     isLoadingMessages ||
     Boolean(isManagingConversationId) ||
+    selectedConversationIsArchived ||
+    hasUnresolvedMessage;
+
+  const isRetryDisabled =
+    isSending ||
+    Boolean(isManagingConversationId) ||
     selectedConversationIsArchived;
+
+  // --------------------------------------------------
+  // Render
+  // --------------------------------------------------
 
   return (
     <div className="flex h-[100dvh] min-h-[520px] w-full overflow-hidden bg-slate-50">
@@ -790,6 +1008,7 @@ export default function AIChat() {
                   key={message.id}
                   message={message}
                   onRetry={() => handleRetryMessage(message)}
+                  retryDisabled={isRetryDisabled}
                 />
               ))}
 
@@ -854,7 +1073,9 @@ export default function AIChat() {
                 placeholder={
                   selectedConversationIsArchived
                     ? "Restore this conversation to continue..."
-                    : "Message DocuMind AI..."
+                    : hasUnresolvedMessage
+                      ? "Retry the failed message to continue..."
+                      : "Message DocuMind AI..."
                 }
                 rows={1}
                 maxLength={10000}

@@ -5,10 +5,6 @@ from django.db import models
 
 
 class Conversation(models.Model):
-    """
-    Stores a conversation belonging to an authenticated user.
-    """
-
     id = models.UUIDField(
         primary_key=True,
         default=uuid.uuid4,
@@ -32,22 +28,15 @@ class Conversation(models.Model):
         default="",
     )
 
-    is_archived = models.BooleanField(
-        default=False,
-    )
+    is_archived = models.BooleanField(default=False)
 
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
-    updated_at = models.DateTimeField(
-        auto_now=True,
-    )
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "AI_Conversation"
         ordering = ["-updated_at"]
-
         indexes = [
             models.Index(
                 fields=["user", "-updated_at"],
@@ -60,17 +49,19 @@ class Conversation(models.Model):
         ]
 
     def __str__(self):
-        return f"{self.title} ({self.user_id})"
+        return f"{self.title} ({self.user.email})"
 
 
 class ConversationMessage(models.Model):
-    """
-    Stores user and assistant messages in a conversation.
-    """
 
     class Role(models.TextChoices):
         USER = "user", "User"
         ASSISTANT = "assistant", "Assistant"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
 
     id = models.UUIDField(
         primary_key=True,
@@ -97,6 +88,19 @@ class ConversationMessage(models.Model):
         default="",
     )
 
+    # Tracks whether message processing has succeeded.
+    status = models.CharField(
+        max_length=20,
+        choices=Status.choices,
+        default=Status.PENDING,
+    )
+
+    # Stores a safe, user-visible processing error when applicable.
+    error_message = models.TextField(
+        blank=True,
+        default="",
+    )
+
     input_tokens = models.PositiveIntegerField(
         null=True,
         blank=True,
@@ -112,23 +116,23 @@ class ConversationMessage(models.Model):
         blank=True,
     )
 
-    created_at = models.DateTimeField(
-        auto_now_add=True,
-    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "AI_ConversationMessage"
         ordering = ["created_at"]
-
         indexes = [
             models.Index(
                 fields=["conversation", "created_at"],
                 name="idx_msg_conv_created",
             ),
+            models.Index(
+                fields=["conversation", "status"],
+                name="idx_msg_conv_status",
+            ),
         ]
 
     def __str__(self):
-        return (
-            f"{self.role} - "
-            f"{self.conversation.title}"
-        )
+        return f"{self.role}: {self.content[:50]}"
