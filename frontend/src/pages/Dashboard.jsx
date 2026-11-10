@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 import {
   BrainCircuit,
@@ -10,6 +10,9 @@ import {
   X,
   UserRound,
   Sparkles,
+  Bot,
+  LoaderCircle,
+  AlertCircle,
 } from "lucide-react";
 
 import api from "../services/api";
@@ -22,33 +25,72 @@ export default function Dashboard() {
 
   const [profile, setProfile] = useState(user);
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Fetch authenticated user profile.
   useEffect(() => {
+    if (!accessToken) {
+      return;
+    }
+
+    let isMounted = true;
+
     const fetchProfile = async () => {
+      setIsLoading(true);
+      setError("");
+
       try {
         const response = await api.get("/auth/profile/");
 
-        setProfile(response.data);
-        setUser(response.data);
-      } catch {
-        setError("Unable to load your profile. Please sign in again.");
+        if (isMounted) {
+          setProfile(response.data);
+          setUser(response.data);
+        }
+      } catch (err) {
+        console.error("Profile loading failed:", err);
+
+        if (isMounted) {
+          setError(
+            err.response?.data?.detail ||
+              "Unable to load your profile. Please try again.",
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchProfile();
+
+    return () => {
+      isMounted = false;
+    };
   }, [accessToken, setUser]);
 
+  // Logout user.
   const handleLogout = async () => {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLoggingOut(true);
+    setMobileMenuOpen(false);
+
     try {
-      await api.post("/auth/logout/", {
-        refresh: refreshToken,
-      });
-    } catch (error) {
-      console.error("Logout API error:", error);
+      if (refreshToken) {
+        await api.post("/auth/logout/", {
+          refresh: refreshToken,
+        });
+      }
+    } catch (err) {
+      console.error("Logout API error:", err);
     } finally {
       logout();
-      navigate("/");
+      navigate("/", { replace: true });
     }
   };
 
@@ -57,10 +99,10 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen w-full overflow-x-hidden bg-slate-50">
+    <div className="min-h-dvh w-full overflow-x-hidden bg-slate-50">
       {/* Header */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           {/* Logo */}
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="shrink-0 rounded-lg bg-blue-600 p-2 text-white">
@@ -74,8 +116,8 @@ export default function Dashboard() {
 
           {/* Desktop navigation */}
           <div className="hidden items-center gap-5 md:flex">
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <UserRound size={17} />
+            <div className="flex min-w-0 items-center gap-2 text-sm text-slate-600">
+              <UserRound size={17} className="shrink-0" />
 
               <span className="max-w-48 truncate">
                 {profile?.email || "Loading profile..."}
@@ -83,21 +125,28 @@ export default function Dashboard() {
             </div>
 
             <button
+              type="button"
               onClick={handleLogout}
-              className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              disabled={isLoggingOut}
+              className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <LogOut size={16} />
-              Logout
+              {isLoggingOut ? (
+                <LoaderCircle size={16} className="animate-spin" />
+              ) : (
+                <LogOut size={16} />
+              )}
+
+              {isLoggingOut ? "Logging out..." : "Logout"}
             </button>
           </div>
 
           {/* Mobile menu button */}
           <button
             type="button"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            onClick={() => setMobileMenuOpen((previous) => !previous)}
             aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             aria-expanded={mobileMenuOpen}
-            className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 md:hidden"
+            className="shrink-0 rounded-lg p-2 text-slate-600 transition hover:bg-slate-100 md:hidden"
           >
             {mobileMenuOpen ? <X size={23} /> : <Menu size={23} />}
           </button>
@@ -106,21 +155,25 @@ export default function Dashboard() {
         {/* Mobile navigation */}
         {mobileMenuOpen && (
           <div className="border-t border-slate-200 bg-white px-4 py-4 md:hidden">
-            <div className="mb-4 flex items-center gap-2 break-all text-sm text-slate-600">
-              <UserRound size={17} className="shrink-0" />
+            <div className="mb-4 flex items-start gap-2 break-all text-sm text-slate-600">
+              <UserRound size={17} className="mt-0.5 shrink-0" />
 
-              {profile?.email || "Loading profile..."}
+              <span>{profile?.email || "Loading profile..."}</span>
             </div>
 
             <button
-              onClick={() => {
-                closeMobileMenu();
-                handleLogout();
-              }}
-              className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-200"
+              type="button"
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
             >
-              <LogOut size={17} />
-              Logout
+              {isLoggingOut ? (
+                <LoaderCircle size={17} className="animate-spin" />
+              ) : (
+                <LogOut size={17} />
+              )}
+
+              {isLoggingOut ? "Logging out..." : "Logout"}
             </button>
           </div>
         )}
@@ -137,7 +190,7 @@ export default function Dashboard() {
                 Your AI-powered workspace
               </div>
 
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
+              <h1 className="break-words text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl lg:text-4xl">
                 Welcome back
                 {profile?.first_name ? `, ${profile.first_name}` : ""}
               </h1>
@@ -149,13 +202,23 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Profile loading */}
+          {isLoading && (
+            <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+              <LoaderCircle size={16} className="animate-spin" />
+              Loading your profile...
+            </div>
+          )}
+
+          {/* Error */}
           {error && (
-            <p
+            <div
               role="alert"
-              className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700"
+              className="mt-4 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
             >
-              {error}
-            </p>
+              <AlertCircle size={17} className="mt-0.5 shrink-0" />
+              <p>{error}</p>
+            </div>
           )}
         </section>
 
@@ -200,24 +263,26 @@ export default function Dashboard() {
             </span>
           </div>
 
-          {/* AI assistant */}
-          <div className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:col-span-2 sm:p-7 lg:col-span-1">
-            <div className="inline-flex rounded-xl bg-emerald-50 p-3 text-emerald-600">
-              <BrainCircuit size={26} />
+          {/* AI Assistant */}
+          <Link
+            to="/ai-chat"
+            className="group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg sm:p-7"
+          >
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600 transition group-hover:bg-indigo-600 group-hover:text-white">
+              <Bot size={24} />
             </div>
 
-            <h2 className="mt-5 text-lg font-bold text-slate-900">
-              AI Assistant
-            </h2>
+            <h2 className="text-lg font-bold text-slate-900">AI Assistant</h2>
 
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              Explore intelligent document analysis and AI-powered assistance.
+              Chat with DocuMind AI and get intelligent answers powered by
+              OpenAI.
             </p>
 
-            <span className="mt-5 inline-block text-sm font-semibold text-emerald-600">
-              Coming soon
-            </span>
-          </div>
+            <div className="mt-5 text-sm font-semibold text-indigo-600">
+              Start chatting →
+            </div>
+          </Link>
         </section>
 
         {/* Footer */}

@@ -1,12 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router";
 
+import { useAuth } from "./context/AuthContext";
+
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-
-import AuthLayout from "./layouts/AuthLayout";
-
-import { useAuth } from "./context/AuthContext";
+import AIChat from "./pages/AIChat";
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated } = useAuth();
@@ -18,35 +17,14 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-export default function App() {
-  const { isAuthenticated } = useAuth();
-
+function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Login */}
-        <Route
-          path="/"
-          element={
-            isAuthenticated ? (
-              <Navigate to="/dashboard" replace />
-            ) : (
-              <AuthLayout>
-                <Login />
-              </AuthLayout>
-            )
-          }
-        />
+        {/* Authentication */}
+        <Route path="/" element={<Login />} />
 
-        {/* Registration */}
-        <Route
-          path="/register"
-          element={
-            <AuthLayout>
-              <Register />
-            </AuthLayout>
-          }
-        />
+        <Route path="/register" element={<Register />} />
 
         {/* Protected dashboard */}
         <Route
@@ -58,14 +36,21 @@ export default function App() {
           }
         />
 
-        {/* Unknown routes */}
+        {/* Protected AI chat */}
         <Route
-          path="*"
+          path="/ai-chat"
           element={
-            <Navigate to={isAuthenticated ? "/dashboard" : "/"} replace />
+            <ProtectedRoute>
+              <AIChat />
+            </ProtectedRoute>
           }
         />
+
+        {/* Unknown routes */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
 }
+
+export default App;
