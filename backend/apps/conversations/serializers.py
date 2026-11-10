@@ -6,9 +6,22 @@ from apps.conversations.models import (
 )
 
 
+class ConversationMessageCreateSerializer(serializers.Serializer):
+    """
+    Validates a new user message.
+    """
+
+    message = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=True,
+        max_length=10000,
+    )
+
+
 class ConversationMessageSerializer(serializers.ModelSerializer):
     """
-    Serializer for messages belonging to a conversation.
+    Serializes individual conversation messages.
     """
 
     class Meta:
@@ -30,7 +43,7 @@ class ConversationMessageSerializer(serializers.ModelSerializer):
 
 class ConversationSerializer(serializers.ModelSerializer):
     """
-    Serializer for listing and creating conversations.
+    Serializer for creating and listing conversations.
     """
 
     message_count = serializers.IntegerField(
@@ -57,9 +70,6 @@ class ConversationSerializer(serializers.ModelSerializer):
         ]
 
     def create(self, validated_data):
-        """
-        Automatically assign the authenticated user.
-        """
 
         user = self.context["request"].user
 
@@ -71,7 +81,7 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 class ConversationDetailSerializer(serializers.ModelSerializer):
     """
-    Serializer for retrieving a conversation with its messages.
+    Returns conversation details with message history.
     """
 
     messages = ConversationMessageSerializer(
