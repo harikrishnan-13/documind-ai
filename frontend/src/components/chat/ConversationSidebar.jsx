@@ -1,4 +1,16 @@
-import { MessageSquare, Plus, PanelLeftClose, Bot } from "lucide-react";
+import {
+  MessageSquare,
+  Plus,
+  PanelLeftClose,
+  Bot,
+  Archive,
+  RotateCcw,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  LoaderCircle,
+  X,
+} from "lucide-react";
 
 function formatDate(dateValue) {
   if (!dateValue) return "";
@@ -8,152 +20,312 @@ function formatDate(dateValue) {
   if (Number.isNaN(date.getTime())) return "";
 
   return date.toLocaleDateString(undefined, {
-    day: "2-digit",
     month: "short",
+    day: "numeric",
   });
+}
+
+function ConversationItem({
+  conversation,
+  isSelected,
+  isArchived = false,
+  isBusy = false,
+  isDisabled = false,
+  onSelect,
+  onArchive,
+  onRestore,
+  onDelete,
+}) {
+  const title = conversation.title || "New conversation";
+
+  return (
+    <div
+      className={`group flex min-w-0 items-center gap-1 rounded-lg px-2 py-2 transition ${
+        isSelected
+          ? "bg-slate-700 text-white"
+          : "text-slate-300 hover:bg-slate-800"
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onSelect(conversation.id)}
+        disabled={isDisabled || isBusy}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
+        title={title}
+      >
+        <MessageSquare size={16} className="shrink-0" />
+
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm">{title}</span>
+
+          <span className="block text-xs text-slate-400">
+            {formatDate(conversation.updated_at || conversation.created_at)}
+          </span>
+        </span>
+      </button>
+
+      <div className="flex shrink-0 items-center gap-0.5">
+        {isBusy ? (
+          <LoaderCircle
+            size={16}
+            className="animate-spin text-slate-400"
+            aria-label="Processing conversation"
+          />
+        ) : (
+          <>
+            {isArchived ? (
+              <button
+                type="button"
+                onClick={() => onRestore(conversation.id)}
+                disabled={isDisabled}
+                className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-600 hover:text-white disabled:opacity-40"
+                title="Restore conversation"
+                aria-label={`Restore ${title}`}
+              >
+                <RotateCcw size={15} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => onArchive(conversation.id)}
+                disabled={isDisabled}
+                className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-600 hover:text-white disabled:opacity-40"
+                title="Archive conversation"
+                aria-label={`Archive ${title}`}
+              >
+                <Archive size={15} />
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => onDelete(conversation)}
+              disabled={isDisabled}
+              className="rounded-md p-1.5 text-slate-400 transition hover:bg-red-500/20 hover:text-red-400 disabled:opacity-40"
+              title="Delete conversation"
+              aria-label={`Delete ${title}`}
+            >
+              <Trash2 size={15} />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function ConversationSidebar({
   conversations = [],
+  archivedConversations = [],
   selectedConversationId,
   onSelectConversation,
   onNewChat,
+  onArchiveConversation,
+  onRestoreConversation,
+  onDeleteConversation,
   isLoading = false,
   isDisabled = false,
+  isManagingConversationId = null,
   collapsed = false,
   onClose,
   onToggleCollapse,
+  mobile = false,
+  showArchived = false,
+  onToggleArchived,
 }) {
+  if (collapsed && !mobile) {
+    return (
+      <aside className="flex h-full w-16 shrink-0 flex-col items-center border-r border-slate-800 bg-slate-950 py-4">
+        <button
+          type="button"
+          onClick={onToggleCollapse}
+          className="rounded-lg p-2 text-slate-300 transition hover:bg-slate-800"
+          title="Expand sidebar"
+          aria-label="Expand sidebar"
+        >
+          <PanelLeftClose size={20} />
+        </button>
+
+        <button
+          type="button"
+          onClick={onNewChat}
+          disabled={isDisabled}
+          className="mt-6 rounded-lg bg-blue-600 p-3 text-white transition hover:bg-blue-500 disabled:opacity-50"
+          title="New chat"
+          aria-label="New chat"
+        >
+          <Plus size={20} />
+        </button>
+
+        <div className="mt-5">
+          <Bot size={22} className="text-blue-400" />
+        </div>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="flex h-full w-full flex-col border-r border-slate-200 bg-slate-950 text-slate-100">
+    <aside
+      className={`flex h-full min-w-0 flex-col border-r border-slate-800 bg-slate-950 text-white ${
+        mobile ? "w-full max-w-[320px]" : "w-72 shrink-0"
+      }`}
+    >
       {/* Sidebar header */}
-      <div
-        className={`flex h-16 shrink-0 items-center border-b border-slate-800 ${
-          collapsed ? "justify-center px-2" : "justify-between px-4"
-        }`}
-      >
-        <div className="flex min-w-0 items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600">
-            <Bot size={21} />
+      <div className="flex items-center justify-between border-b border-slate-800 p-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="shrink-0 rounded-lg bg-blue-600 p-2">
+            <Bot size={19} />
           </div>
 
-          {!collapsed && (
-            <div className="min-w-0">
-              <h2 className="truncate text-sm font-bold">DocuMind AI</h2>
-              <p className="text-xs text-slate-400">Document Assistant</p>
-            </div>
-          )}
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold">DocuMind AI</h2>
+            <p className="text-xs text-slate-400">Document Assistant</p>
+          </div>
         </div>
 
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white lg:hidden"
-            aria-label="Close sidebar"
-          >
-            <PanelLeftClose size={19} />
-          </button>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {!mobile && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              title="Collapse sidebar"
+              aria-label="Collapse sidebar"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          )}
 
-        {!collapsed && (
-          <button
-            type="button"
-            onClick={onToggleCollapse}
-            className="hidden rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white lg:block"
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar"
-          >
-            <PanelLeftClose size={18} />
-          </button>
-        )}
+          {mobile && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              aria-label="Close sidebar"
+              title="Close sidebar"
+            >
+              <X size={19} />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* New conversation */}
+      {/* New chat button */}
       <div className="p-3">
         <button
           type="button"
           onClick={onNewChat}
           disabled={isDisabled}
-          title="New chat"
-          className={`flex w-full items-center gap-3 rounded-xl bg-blue-600 px-3 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 ${
-            collapsed ? "justify-center" : ""
-          }`}
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Plus size={19} />
-
-          {!collapsed && <span>New Chat</span>}
+          <Plus size={17} />
+          New Chat
         </button>
       </div>
 
-      {/* Conversation history */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
-        {!collapsed && (
-          <p className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-            Recent conversations
-          </p>
+      {/* Conversation lists */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4">
+        {/* Active conversations heading */}
+        <button
+          type="button"
+          onClick={() => onToggleArchived?.(false)}
+          className={`mb-2 flex items-center justify-between rounded-lg px-2 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+            !showArchived ? "text-blue-400" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <span>Recent conversations</span>
+
+          {!showArchived && <ChevronDown size={15} />}
+        </button>
+
+        {/* Active conversations */}
+        {!showArchived && (
+          <>
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400">
+                <LoaderCircle size={17} className="animate-spin" />
+                Loading conversations...
+              </div>
+            ) : conversations.length === 0 ? (
+              <p className="px-2 py-6 text-center text-sm text-slate-500">
+                No conversations yet.
+                <br />
+                Start a new chat.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {conversations.map((conversation) => (
+                  <ConversationItem
+                    key={conversation.id}
+                    conversation={conversation}
+                    isSelected={selectedConversationId === conversation.id}
+                    isBusy={isManagingConversationId === conversation.id}
+                    isDisabled={isDisabled}
+                    onSelect={onSelectConversation}
+                    onArchive={onArchiveConversation}
+                    onDelete={onDeleteConversation}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
 
-        {isLoading && (
-          <div className="space-y-3 px-2 py-3">
-            {[1, 2, 3].map((item) => (
-              <div
-                key={item}
-                className="h-10 animate-pulse rounded-lg bg-slate-800"
-              />
-            ))}
-          </div>
+        {/* Archived conversations heading */}
+        <button
+          type="button"
+          onClick={() => onToggleArchived?.(!showArchived)}
+          className={`mt-5 flex items-center justify-between rounded-lg px-2 py-2 text-xs font-semibold uppercase tracking-wide transition ${
+            showArchived ? "text-blue-400" : "text-slate-400 hover:text-white"
+          }`}
+        >
+          <span>Archived conversations</span>
+
+          {showArchived ? (
+            <ChevronDown size={15} />
+          ) : (
+            <ChevronRight size={15} />
+          )}
+        </button>
+
+        {/* Archived conversations */}
+        {showArchived && (
+          <>
+            {isLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-slate-400">
+                <LoaderCircle size={17} className="animate-spin" />
+                Loading archived chats...
+              </div>
+            ) : archivedConversations.length === 0 ? (
+              <p className="px-2 py-6 text-center text-sm text-slate-500">
+                No archived conversations.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {archivedConversations.map((conversation) => (
+                  <ConversationItem
+                    key={conversation.id}
+                    conversation={conversation}
+                    isSelected={selectedConversationId === conversation.id}
+                    isArchived
+                    isBusy={isManagingConversationId === conversation.id}
+                    isDisabled={isDisabled}
+                    onSelect={onSelectConversation}
+                    onRestore={onRestoreConversation}
+                    onDelete={onDeleteConversation}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
-
-        {!isLoading && conversations.length === 0 && (
-          <p className="px-2 py-4 text-sm text-slate-500">
-            {collapsed ? "" : "No conversations yet."}
-          </p>
-        )}
-
-        {!isLoading &&
-          conversations.map((conversation) => {
-            const isActive = conversation.id === selectedConversationId;
-
-            return (
-              <button
-                key={conversation.id}
-                type="button"
-                disabled={isDisabled}
-                onClick={() => onSelectConversation(conversation.id)}
-                title={conversation.title}
-                className={`mb-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                  isActive
-                    ? "bg-slate-800 text-white"
-                    : "text-slate-300 hover:bg-slate-900"
-                } ${collapsed ? "justify-center" : ""}`}
-              >
-                <MessageSquare size={17} className="shrink-0" />
-
-                {!collapsed && (
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {conversation.title || "New conversation"}
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-500">
-                      {formatDate(conversation.updated_at)}
-                    </p>
-                  </div>
-                )}
-              </button>
-            );
-          })}
       </div>
 
       {/* Sidebar footer */}
-      <div className="shrink-0 border-t border-slate-800 p-4">
-        {!collapsed && (
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            AI Assistant
-          </div>
-        )}
+      <div className="border-t border-slate-800 p-3">
+        <p className="text-center text-xs text-slate-500">
+          DocuMind AI · Intelligent Document Assistant
+        </p>
       </div>
     </aside>
   );

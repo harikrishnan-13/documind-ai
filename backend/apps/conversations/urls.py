@@ -6,26 +6,51 @@ from apps.conversations.views import (
     ConversationMessageCreateView,
 )
 
+from apps.conversations.management_views import (
+    ArchivedConversationListView,
+    ConversationArchiveView,
+    ConversationRestoreView,
+)
+
 
 urlpatterns = [
-    # Create and list conversations.
+    # Active conversations
     path(
         "",
         ConversationListCreateView.as_view(),
-        name="conversation-list-create",
+        name="conversation-list-create"
     ),
 
-    # Retrieve and delete a conversation.
+    # Archived conversations
+    path(
+        "archived/",
+        ArchivedConversationListView.as_view(),
+        name="archived-conversation-list"
+    ),
+
+    # Archive and restore
+    path(
+        "<uuid:id>/archive/",
+        ConversationArchiveView.as_view(),
+        name="conversation-archive"
+    ),
+    path(
+        "<uuid:id>/restore/",
+        ConversationRestoreView.as_view(),
+        name="conversation-restore"
+    ),
+
+    # Conversation details and deletion
     path(
         "<uuid:id>/",
         ConversationDetailView.as_view(),
-        name="conversation-detail",
+        name="conversation-detail"
     ),
 
-    # Send a message within a conversation.
+    # Send a message
     path(
         "<uuid:id>/messages/",
         ConversationMessageCreateView.as_view(),
-        name="conversation-message-create",
+        name="conversation-message-create"
     ),
 ]

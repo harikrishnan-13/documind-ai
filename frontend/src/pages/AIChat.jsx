@@ -6,9 +6,9 @@ import {
   PanelLeftOpen,
   Send,
   Sparkles,
-  Plus,
   LoaderCircle,
   AlertCircle,
+  Archive,
 } from "lucide-react";
 
 import api from "../services/api";
@@ -34,7 +34,10 @@ function normalizeConversationList(data) {
   return [];
 }
 
-function getErrorMessage(error) {
+function getErrorMessage(
+  error,
+  fallback = "Something went wrong. Please try again.",
+) {
   const data = error?.response?.data;
 
   if (typeof data?.message === "string") {
@@ -57,29 +60,50 @@ function getErrorMessage(error) {
     }
   }
 
-  return error?.message || "Something went wrong. Please try again.";
+  return error?.message || fallback;
 }
 
 export default function AIChat() {
+  // --------------------------------------------------
+  // Conversation states
+  // --------------------------------------------------
+
   const [conversations, setConversations] = useState([]);
+
+  const [archivedConversations, setArchivedConversations] = useState([]);
 
   const [selectedConversationId, setSelectedConversationId] = useState(null);
 
   const [messages, setMessages] = useState([]);
 
+  // --------------------------------------------------
+  // UI states
+  // --------------------------------------------------
+
   const [input, setInput] = useState("");
 
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
 
+  const [isLoadingArchived, setIsLoadingArchived] = useState(false);
+
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   const [isSending, setIsSending] = useState(false);
+
+  const [isManagingConversationId, setIsManagingConversationId] =
+    useState(null);
+
+  const [showArchived, setShowArchived] = useState(false);
 
   const [pageError, setPageError] = useState("");
 
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // --------------------------------------------------
+  // Refs
+  // --------------------------------------------------
 
   const messagesEndRef = useRef(null);
 
@@ -88,7 +112,7 @@ export default function AIChat() {
   const userHasSelectedRef = useRef(false);
 
   // --------------------------------------------------
-  // Load conversation list from Django.
+  // Load active conversations
   // --------------------------------------------------
 
   const loadConversations = useCallback(async () => {
@@ -102,10 +126,39 @@ export default function AIChat() {
       return conversationList;
     } catch (error) {
       setPageError(getErrorMessage(error));
-
       throw error;
     }
   }, []);
+
+  // --------------------------------------------------
+  // Load archived conversations
+  // --------------------------------------------------
+
+  const loadArchivedConversations = useCallback(async () => {
+    try {
+      setIsLoadingArchived(true);
+
+      const response = await api.get("/conversations/archived/");
+
+      const archivedList = normalizeConversationList(response.data);
+
+      setArchivedConversations(archivedList);
+
+      return archivedList;
+    } catch (error) {
+      setPageError(
+        getErrorMessage(error, "Unable to load archived conversations."),
+      );
+
+      throw error;
+    } finally {
+      setIsLoadingArchived(false);
+    }
+  }, []);
+
+  // --------------------------------------------------
+  // Initial conversation loading
+  // --------------------------------------------------
 
   useEffect(() => {
     let active = true;
@@ -120,8 +173,7 @@ export default function AIChat() {
 
         setConversations(conversationList);
 
-        // Automatically reopen the latest conversation
-        // when the user refreshes the browser.
+        // Reopen the latest active conversation after refresh.
         if (!userHasSelectedRef.current && conversationList.length > 0) {
           setSelectedConversationId(conversationList[0].id);
         }
@@ -144,7 +196,7 @@ export default function AIChat() {
   }, []);
 
   // --------------------------------------------------
-  // Load selected conversation and its messages.
+  // Load selected conversation and messages
   // --------------------------------------------------
 
   useEffect(() => {
@@ -154,7 +206,7 @@ export default function AIChat() {
       return;
     }
 
-    // A newly created conversation has no history to fetch.
+    // Avoid unnecessary fetching for a newly created conversation.
     if (loadedConversationRef.current === selectedConversationId) {
       return;
     }
@@ -199,7 +251,7 @@ export default function AIChat() {
   }, [selectedConversationId]);
 
   // --------------------------------------------------
-  // Scroll to the latest message.
+  // Scroll to latest message
   // --------------------------------------------------
 
   useEffect(() => {
@@ -210,11 +262,29 @@ export default function AIChat() {
   }, [messages, isSending]);
 
   // --------------------------------------------------
-  // Start a new conversation.
+  // Current conversation information
+  // --------------------------------------------------
+
+  const selectedConversation =
+    conversations.find(
+      (conversation) => conversation.id === selectedConversationId,
+    ) ||
+    archivedConversations.find(
+      (conversation) => conversation.id === selectedConversationId,
+    );
+
+  const selectedConversationIsArchived =
+    selectedConversation?.is_archived === true ||
+    archivedConversations.some(
+      (conversation) => conversation.id === selectedConversationId,
+    );
+
+  // --------------------------------------------------
+  // Start a new conversation
   // --------------------------------------------------
 
   function handleNewChat() {
-    if (isSending) return;
+    if (isSending || isManagingConversationId) return;
 
     userHasSelectedRef.current = true;
 
@@ -228,15 +298,17 @@ export default function AIChat() {
 
     setPageError("");
 
+    setShowArchived(false);
+
     setMobileSidebarOpen(false);
   }
 
   // --------------------------------------------------
-  // Select an existing conversation.
+  // Select an existing conversation
   // --------------------------------------------------
 
   function handleSelectConversation(conversationId) {
-    if (isSending) return;
+    if (isSending || isManagingConversationId) return;
 
     userHasSelectedRef.current = true;
 
@@ -257,7 +329,162 @@ export default function AIChat() {
   }
 
   // --------------------------------------------------
-  // Send message to Django and OpenAI.
+  // Toggle active / archived conversation section
+  // --------------------------------------------------
+
+  const handleToggleArchived = useCallback(
+    async (show) => {
+      setShowArchived(show);
+
+      if (show) {
+        try {
+          await loadArchivedConversations();
+        } catch {
+          // Error is already displayed through pageError.
+        }
+      }
+    },
+    [loadArchivedConversations],
+  );
+
+  // --------------------------------------------------
+  // Archive conversation
+  // --------------------------------------------------
+
+  const handleArchiveConversation = useCallback(
+    async (conversationId) => {
+      if (isSending || isManagingConversationId) return;
+
+      try {
+        setIsManagingConversationId(conversationId);
+        setPageError("");
+
+        await api.post(`/conversations/${conversationId}/archive/`);
+
+        // If the current conversation is archived, clear the chat.
+        if (selectedConversationId === conversationId) {
+          loadedConversationRef.current = null;
+
+          setSelectedConversationId(null);
+
+          setMessages([]);
+
+          setInput("");
+        }
+
+        await loadConversations();
+
+        // Refresh archived list if it is currently visible.
+        if (showArchived) {
+          await loadArchivedConversations();
+        }
+      } catch (error) {
+        setPageError(getErrorMessage(error, "Unable to archive conversation."));
+      } finally {
+        setIsManagingConversationId(null);
+      }
+    },
+    [
+      isSending,
+      isManagingConversationId,
+      selectedConversationId,
+      showArchived,
+      loadConversations,
+      loadArchivedConversations,
+    ],
+  );
+
+  // --------------------------------------------------
+  // Restore conversation
+  // --------------------------------------------------
+
+  const handleRestoreConversation = useCallback(
+    async (conversationId) => {
+      if (isSending || isManagingConversationId) return;
+
+      try {
+        setIsManagingConversationId(conversationId);
+        setPageError("");
+
+        await api.post(`/conversations/${conversationId}/restore/`);
+
+        await loadConversations();
+
+        await loadArchivedConversations();
+
+        // If the restored conversation is currently selected,
+        // switch to the active conversations section.
+        if (selectedConversationId === conversationId) {
+          setShowArchived(false);
+        }
+      } catch (error) {
+        setPageError(getErrorMessage(error, "Unable to restore conversation."));
+      } finally {
+        setIsManagingConversationId(null);
+      }
+    },
+    [
+      isSending,
+      isManagingConversationId,
+      selectedConversationId,
+      loadConversations,
+      loadArchivedConversations,
+    ],
+  );
+
+  // --------------------------------------------------
+  // Permanently delete conversation
+  // --------------------------------------------------
+
+  const handleDeleteConversation = useCallback(
+    async (conversation) => {
+      if (isSending || isManagingConversationId) return;
+
+      const conversationTitle = conversation.title || "New conversation";
+
+      const confirmed = window.confirm(
+        `Permanently delete "${conversationTitle}"?\n\nThis will also delete all its messages. This action cannot be undone.`,
+      );
+
+      if (!confirmed) return;
+
+      try {
+        setIsManagingConversationId(conversation.id);
+        setPageError("");
+
+        await api.delete(`/conversations/${conversation.id}/`);
+
+        // Clear selected conversation if it was deleted.
+        if (selectedConversationId === conversation.id) {
+          loadedConversationRef.current = null;
+
+          setSelectedConversationId(null);
+
+          setMessages([]);
+
+          setInput("");
+        }
+
+        await loadConversations();
+
+        await loadArchivedConversations();
+      } catch (error) {
+        setPageError(getErrorMessage(error, "Unable to delete conversation."));
+      } finally {
+        setIsManagingConversationId(null);
+      }
+    },
+    [
+      isSending,
+      isManagingConversationId,
+      selectedConversationId,
+      loadConversations,
+      loadArchivedConversations,
+    ],
+  );
+
+  // --------------------------------------------------
+  // Send message to Django and OpenAI
   // --------------------------------------------------
 
   async function handleSendMessage(event) {
@@ -265,7 +492,13 @@ export default function AIChat() {
 
     const messageText = input.trim();
 
-    if (!messageText || isSending || isLoadingMessages) {
+    if (
+      !messageText ||
+      isSending ||
+      isLoadingMessages ||
+      isManagingConversationId ||
+      selectedConversationIsArchived
+    ) {
       return;
     }
 
@@ -290,8 +523,7 @@ export default function AIChat() {
     try {
       let conversationId = selectedConversationId;
 
-      // Create the conversation only when its first
-      // message is submitted.
+      // Create a conversation when the first message is submitted.
       if (!conversationId) {
         const title =
           messageText.length > 60
@@ -312,17 +544,17 @@ export default function AIChat() {
 
         userHasSelectedRef.current = true;
 
-        // Prevent the detail-loading effect from fetching
-        // an empty conversation while its first message
-        // is being submitted.
         loadedConversationRef.current = conversationId;
 
         setSelectedConversationId(conversationId);
 
-        setConversations((previous) => [newConversation, ...previous]);
+        setConversations((previous) => [
+          newConversation,
+          ...previous.filter((item) => item.id !== conversationId),
+        ]);
       }
 
-      // Send message to the multi-turn conversation endpoint.
+      // Submit the message to the multi-turn conversation endpoint.
       const response = await api.post(
         `/conversations/${conversationId}/messages/`,
         {
@@ -336,20 +568,19 @@ export default function AIChat() {
         throw new Error("The server returned an unexpected response.");
       }
 
-      // Replace temporary message with the saved user message,
-      // then append the assistant response.
+      // Replace temporary message with persisted messages.
       setMessages((previous) => [
         ...previous.filter((item) => item.id !== temporaryMessageId),
         result.user_message,
         result.assistant_message,
       ]);
 
-      // Refresh sidebar metadata and ordering.
+      // Refresh conversation ordering and metadata.
       try {
         await loadConversations();
       } catch {
-        // Message was successfully sent.
-        // Keep the chat usable if sidebar refresh fails.
+        // The message was sent successfully.
+        // Keep the chat usable if the list refresh fails.
       }
     } catch (error) {
       setMessages((previous) =>
@@ -371,11 +602,11 @@ export default function AIChat() {
   }
 
   // --------------------------------------------------
-  // Retry a failed message.
+  // Retry a failed message
   // --------------------------------------------------
 
   function handleRetryMessage(message) {
-    if (isSending) return;
+    if (isSending || selectedConversationIsArchived) return;
 
     setMessages((previous) =>
       previous.filter((item) => item.id !== message.id),
@@ -387,12 +618,18 @@ export default function AIChat() {
   }
 
   // --------------------------------------------------
-  // Current conversation information.
+  // Determine sidebar loading state
   // --------------------------------------------------
 
-  const selectedConversation = conversations.find(
-    (conversation) => conversation.id === selectedConversationId,
-  );
+  const isSidebarLoading = showArchived
+    ? isLoadingArchived
+    : isLoadingConversations;
+
+  const isChatDisabled =
+    isSending ||
+    isLoadingMessages ||
+    Boolean(isManagingConversationId) ||
+    selectedConversationIsArchived;
 
   return (
     <div className="flex h-[100dvh] min-h-[520px] w-full overflow-hidden bg-slate-50">
@@ -410,23 +647,30 @@ export default function AIChat() {
       <div
         className={`
           fixed inset-y-0 left-0 z-40
-          transform transition-all duration-300
+          w-72 transform transition-all duration-300
           lg:relative lg:translate-x-0
           ${mobileSidebarOpen ? "translate-x-0" : "-translate-x-full"}
-          ${sidebarCollapsed ? "lg:w-20" : "lg:w-72"}
-          w-72
+          ${sidebarCollapsed ? "lg:w-16" : "lg:w-72"}
         `}
       >
         <ConversationSidebar
           conversations={conversations}
+          archivedConversations={archivedConversations}
           selectedConversationId={selectedConversationId}
           onSelectConversation={handleSelectConversation}
           onNewChat={handleNewChat}
-          isLoading={isLoadingConversations}
-          isDisabled={isSending}
+          onArchiveConversation={handleArchiveConversation}
+          onRestoreConversation={handleRestoreConversation}
+          onDeleteConversation={handleDeleteConversation}
+          isLoading={isSidebarLoading}
+          isDisabled={isSending || Boolean(isManagingConversationId)}
+          isManagingConversationId={isManagingConversationId}
           collapsed={sidebarCollapsed}
           onClose={() => setMobileSidebarOpen(false)}
-          onToggleCollapse={() => setSidebarCollapsed(true)}
+          onToggleCollapse={() => setSidebarCollapsed((previous) => !previous)}
+          mobile={mobileSidebarOpen}
+          showArchived={showArchived}
+          onToggleArchived={handleToggleArchived}
         />
       </div>
 
@@ -475,9 +719,22 @@ export default function AIChat() {
 
           <div className="hidden items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 sm:flex">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Ready to assist
+
+            {selectedConversationIsArchived ? "Archived" : "Ready to assist"}
           </div>
         </header>
+
+        {/* Archived conversation notice */}
+        {selectedConversationIsArchived && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Archive size={17} className="shrink-0" />
+
+            <p className="min-w-0">
+              This conversation is archived. Restore it before sending new
+              messages.
+            </p>
+          </div>
+        )}
 
         {/* Messages section */}
         <section className="min-h-0 flex-1 overflow-y-auto px-3 py-5 sm:px-6">
@@ -506,21 +763,23 @@ export default function AIChat() {
                   information with DocuMind AI.
                 </p>
 
-                <div className="mt-7 grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
-                  {SUGGESTED_PROMPTS.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      disabled={isSending}
-                      onClick={() => setInput(prompt)}
-                      className="rounded-xl border border-slate-200 bg-white p-4 text-left text-sm text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50 sm:last:col-span-2"
-                    >
-                      <Sparkles size={16} className="mb-2 text-blue-600" />
+                {!selectedConversationIsArchived && (
+                  <div className="mt-7 grid w-full max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
+                    {SUGGESTED_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        disabled={isChatDisabled}
+                        onClick={() => setInput(prompt)}
+                        className="rounded-xl border border-slate-200 bg-white p-4 text-left text-sm text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50 sm:last:col-span-2"
+                      >
+                        <Sparkles size={16} className="mb-2 text-blue-600" />
 
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -557,7 +816,10 @@ export default function AIChat() {
         {/* Error notification */}
         {pageError && (
           <div className="mx-auto mb-2 flex w-full max-w-4xl items-start gap-2 px-3 sm:px-6">
-            <div className="flex w-full items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div
+              role="alert"
+              className="flex w-full items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
               <AlertCircle size={18} className="mt-0.5 shrink-0" />
 
               <p className="min-w-0 flex-1 break-words">{pageError}</p>
@@ -589,16 +851,20 @@ export default function AIChat() {
                     handleSendMessage(event);
                   }
                 }}
-                placeholder="Message DocuMind AI..."
+                placeholder={
+                  selectedConversationIsArchived
+                    ? "Restore this conversation to continue..."
+                    : "Message DocuMind AI..."
+                }
                 rows={1}
                 maxLength={10000}
-                disabled={isSending || isLoadingMessages}
+                disabled={isChatDisabled}
                 className="max-h-36 min-h-11 flex-1 resize-y border-0 bg-transparent px-3 py-3 text-sm text-slate-800 outline-none placeholder:text-slate-400 focus:ring-0 disabled:opacity-60"
               />
 
               <button
                 type="submit"
-                disabled={!input.trim() || isSending || isLoadingMessages}
+                disabled={!input.trim() || isChatDisabled}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 aria-label="Send message"
               >
