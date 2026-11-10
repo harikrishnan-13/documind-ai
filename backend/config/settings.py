@@ -208,3 +208,36 @@ SPECTACULAR_SETTINGS = {
 
 #Tell Django to use our custom User model
 AUTH_USER_MODEL = "accounts.User"
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": (
+                "{asctime} | {levelname} | "
+                "{name} | {message}"
+            ),
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "apps.ai_engine.services.usage_tracker": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "apps.ai_engine.services.openai_service": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
