@@ -44,4 +44,6 @@ urlpatterns = [
     path("api/v1/auth/", include("apps.accounts.urls")),
     
     path("api/v1/ai/", include("apps.ai_engine.urls")),
+    
+    path("api/v1/conversations/", include("apps.conversations.urls")),
 ]
