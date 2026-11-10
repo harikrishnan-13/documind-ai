@@ -2,6 +2,11 @@
 from django.conf import settings
 from openai import OpenAI, OpenAIError
 
+from apps.ai_engine.prompts.chat import (
+    CHAT_SYSTEM_PROMPT,
+    build_chat_user_prompt,
+)
+
 
 class OpenAIService:
 
@@ -18,22 +23,16 @@ class OpenAIService:
             max_retries=2,
         )
 
-    def generate_response(self, message):
+    def generate_response(self, message: str) -> str:
         try:
             response = self.client.responses.create(
                 model=settings.OPENAI_MODEL,
-                instructions=(
-                    "You are DocuMind AI, an intelligent document "
-                    "assistant. Provide clear, accurate and helpful "
-                    "answers. If you do not know something, "
-                    "be honest and do not invent information."
-                ),
-                input=message,
+                instructions=CHAT_SYSTEM_PROMPT,
+                input=build_chat_user_prompt(message),
                 max_output_tokens=500,
             )
 
             return response.output_text
 
         except OpenAIError:
-            # Log detailed errors on the backend in a later step.
             raise
